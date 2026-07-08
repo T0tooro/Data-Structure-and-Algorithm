@@ -118,7 +118,7 @@ bool intBst::CheckRI(const Node* node, int lo, int hi) const
         return true;                    // empty is always valid
     if (node->data <= lo || node->data >= hi)
         return false;   // outside allowed window
-    return CheckRI(node->left,  lo,         node->data) &&    // left window shrinks up
+    return CheckRI(node->left, lo, node->data) &&    // left window shrinks up
            CheckRI(node->right, node->data, hi);              // right window shrinks down
 }
 
