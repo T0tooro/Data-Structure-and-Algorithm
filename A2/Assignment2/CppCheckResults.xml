@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<results version="2">
+    <cppcheck version="2.21.0" />
+    <errors>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Time::m_hour&apos; is never used." verbose="class member &apos;Time::m_hour&apos; is never used." cwe="563" file0="Time.h">
+            <location file="Time.h" line="50" column="9" />
+            <symbol>Time::m_hour</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Time::m_minute&apos; is never used." verbose="class member &apos;Time::m_minute&apos; is never used." cwe="563" file0="Time.h">
+            <location file="Time.h" line="51" column="9" />
+            <symbol>Time::m_minute</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Time::m_second&apos; is never used." verbose="class member &apos;Time::m_second&apos; is never used." cwe="563" file0="Time.h">
+            <location file="Time.h" line="52" column="9" />
+            <symbol>Time::m_second</symbol>
+        </error>
+        <error id="unreadVariable" severity="style" msg="Variable &apos;inner[0]&apos; is assigned a value that is never used." verbose="Variable &apos;inner[0]&apos; is assigned a value that is never used." cwe="563" file0="UnitTests.cpp">
+            <location file="UnitTests.cpp" line="70" column="18" />
+            <symbol>inner[0]</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_windSpeed&apos; is never used." verbose="class member &apos;WeatherRecord::m_windSpeed&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="119" column="12" />
+            <symbol>WeatherRecord::m_windSpeed</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_ambientTemp&apos; is never used." verbose="class member &apos;WeatherRecord::m_ambientTemp&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="121" column="12" />
+            <symbol>WeatherRecord::m_ambientTemp</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_solarRad&apos; is never used." verbose="class member &apos;WeatherRecord::m_solarRad&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="123" column="12" />
+            <symbol>WeatherRecord::m_solarRad</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_validWind&apos; is never used." verbose="class member &apos;WeatherRecord::m_validWind&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="125" column="10" />
+            <symbol>WeatherRecord::m_validWind</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_validTemp&apos; is never used." verbose="class member &apos;WeatherRecord::m_validTemp&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="127" column="10" />
+            <symbol>WeatherRecord::m_validTemp</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;WeatherRecord::m_validSolar&apos; is never used." verbose="class member &apos;WeatherRecord::m_validSolar&apos; is never used." cwe="563" file0="WeatherRecord.h">
+            <location file="WeatherRecord.h" line="129" column="10" />
+            <symbol>WeatherRecord::m_validSolar</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Date::m_day&apos; is never used." verbose="class member &apos;Date::m_day&apos; is never used." cwe="563" file0="Date.h">
+            <location file="Date.h" line="50" column="9" />
+            <symbol>Date::m_day</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Date::m_month&apos; is never used." verbose="class member &apos;Date::m_month&apos; is never used." cwe="563" file0="Date.h">
+            <location file="Date.h" line="51" column="9" />
+            <symbol>Date::m_month</symbol>
+        </error>
+        <error id="unusedStructMember" severity="style" msg="class member &apos;Date::m_year&apos; is never used." verbose="class member &apos;Date::m_year&apos; is never used." cwe="563" file0="Date.h">
+            <location file="Date.h" line="52" column="9" />
+            <symbol>Date::m_year</symbol>
+        </error>
+        <error id="variableScope" severity="style" msg="The scope of the variable &apos;solarKwh&apos; can be reduced." verbose="The scope of the variable &apos;solarKwh&apos; can be reduced. Warning: Be careful when fixing this message, especially when there are inner loops. Here is an example where cppcheck will write that the scope for &apos;i&apos; can be reduced:\012void f(int x)\012{\012    int i = 0;\012    if (x) {\012        // it&apos;s safe to move &apos;int i = 0;&apos; here\012        for (int n = 0; n &lt; 10; ++n) {\012            // it is possible but not safe to move &apos;int i = 0;&apos; here\012            do_something(&amp;i);\012        }\012    }\012}\012When you see this message it is always safe to reduce the variable scope 1 level." cwe="398" file0="Main.cpp">
+            <location file="Main.cpp" line="368" column="16" />
+            <symbol>solarKwh</symbol>
+        </error>
+        <error id="unusedFunction" severity="style" msg="The function &apos;GetTime&apos; is never used." verbose="The function &apos;GetTime&apos; is never used." cwe="561">
+            <location file="Weatherrecord.cpp" line="41" column="21" />
+            <symbol>GetTime</symbol>
+        </error>
+        <error id="checkersReport" severity="information" msg="Active checkers: 173/186" verbose="Active checkers: 173/186" />
+    </errors>
+</results>

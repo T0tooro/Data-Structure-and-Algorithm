@@ -1,0 +1,89 @@
+ICT283 - Assignment 2 progress evaluation
+Jun Rong
+
+1. MENU OPTIONS FOR ASSIGNMENT 2
+
+The program builds and runs under CodeBlocks with C++11 and all warnings
+enabled (-Wall -Wextra), reporting 0 errors and 0 warnings.
+
+Option 3 has been replaced. It now prompts for a month as a number and
+prints the sample Pearson Correlation Coefficient for S_T, S_R and T_R
+across every year loaded, to two decimal places as specified. A record only
+contributes to a pair when both fields of that pair are valid, so every pair
+passed to the calculation is complete. I validated the routine against
+Excel's PEARSON function on one data file for February: Excel returned
+0.300695 and the program returned 0.30, which is the same value at the
+required precision.
+
+Option 4 now prints the mean absolute deviation next to the standard
+deviation as (stdev, mad), written to WindTempSolar.csv. Nothing else in
+that option changed. As a check, mad is smaller than stdev in every row,
+which is expected because squaring the differences weights outliers more
+heavily.
+
+CalculateMAD and CalculateSPCC were added to StatsUtils.h as templates
+taking Vector<T>, so neither is coupled to the weather data type.
+
+Wind speed is converted to km/h before the correlation. This has no effect
+on the result, because correlation is invariant under positive linear
+scaling; it was kept only for consistency with the other options.
+
+Solar radiation is not filtered at 100 W/m2 for option 3. That threshold
+exists in option 4 to exclude near-dark readings from an energy total.
+Removing low readings from a correlation would bias it, so all valid
+readings are used.
+
+2. DATA STRUCTURES - PLANNED APPROACH
+
+The BST from Lab 10d is in the project but is not yet used in processing. I
+am aware that loading data into the BST and map without using them in the
+processing does not meet the assignment requirement.
+
+The intended design is Map<int, Bst<WeatherRecord>>: the key is the year,
+the value is a BST of that year's records ordered by date and time. Options
+1, 2 and 4 select a year through the map in O(log n) and then traverse one
+tree; option 3 iterates the years and traverses each tree. Both structures
+do real work rather than duplicating the Vector.
+
+Two issues must be resolved first. The BST ignores duplicate keys, so
+WeatherRecord::operator< has to compare date and then time, otherwise
+readings ten minutes apart on the same day would be silently discarded.
+Second, the data arrives in chronological order, so sequential insertion
+produces a right-spine tree that degrades to O(n). This can be addressed
+without changing the tree itself by changing the insertion order.
+
+I considered Map<year, Map<month, Bst>>. It gives faster access by month,
+but the map then performs the ordering work that the BST should be doing,
+and it makes option 3 more awkward.
+
+3. BACKUPS
+
+Work is kept in a Git repository and on OneDrive.
+
+While restructuring the repository this week I found that the repository
+root was inside the Lab 9 folder and that a second .git existed inside A2.
+Git had staged A2 as an embedded repository, which means it would have
+appeared on GitHub as a folder containing nothing. The backup would have
+looked correct while holding no files.
+
+I found this by reading git status before committing rather than running
+git add and trusting the result. The fix was to move the repository root up
+to ICT283DSA, remove the nested repository, and use a whitelist .gitignore
+so that build output and unit-supplied material are excluded.
+
+The lesson is that a backup that has not been verified is not a backup.
+Opening the file on GitHub to confirm it is readable is now part of the
+process rather than an afterthought.
+
+4. STATIC ANALYSIS
+
+cppcheck was run from the CodeBlocks plugin with the arguments given in the
+lab. All findings were style level. The unusedStructMember reports on Date,
+Time and WeatherRecord are false positives: those members are used through
+the accessors in the .cpp files, which cppcheck cannot see when analysing a
+file in isolation. GetTime is reported as unused but is retained because it
+belongs to a complete class interface.
+
+5. LESSONS FROM THE IN-PERSON ASSESSMENT
+
+[To be completed after the demonstration.]
