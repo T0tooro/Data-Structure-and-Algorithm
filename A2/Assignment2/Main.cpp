@@ -4,13 +4,21 @@
 #include <string>
 #include <iomanip>
 #include <cctype>
+#include <map>
 #include "Vector.h"
 #include "Date.h"
 #include "Time.h"
 #include "WeatherRecord.h"
+#include "BinarySearchTree.h"
 #include "StatsUtils.h"
 
 using namespace std;
+
+/// One year's readings, ordered by date and then time
+typedef BinarySearchTree<WeatherRecord> WeatherTree;
+
+/// Every loaded year, keyed by the year number
+typedef map<int, WeatherTree> YearMap;
 
 // Presentation Layer Stream Output Implementations (View decoupled from Model)
 ostream & operator<<(ostream & os, const Date & d)
@@ -164,7 +172,6 @@ bool LoadWeatherData(const string & path, Vector<WeatherRecord> & records)
         Vector<string> fields;
         SplitByComma(line, fields);
 
-        // Fix: Banned max({...}) replaced entirely with manual sizing comparisons
         if (wastIdx >= fields.Size() || sIdx >= fields.Size() ||
                 tIdx >= fields.Size() || srIdx >= fields.Size())
         {
@@ -183,7 +190,9 @@ bool LoadWeatherData(const string & path, Vector<WeatherRecord> & records)
         {
             try
             {
-                rec.SetWindSpeed(stod(fields[sIdx]));
+                double s{stod(fields[sIdx])};
+                if (s >= 0.0)          // a negative wind speed is not a reading
+                    rec.SetWindSpeed(s);
             }
             catch (...) {}
         }
@@ -199,7 +208,9 @@ bool LoadWeatherData(const string & path, Vector<WeatherRecord> & records)
         {
             try
             {
-                rec.SetSolarRad(stod(fields[srIdx]));
+                double sr{stod(fields[srIdx])};
+                if (sr >= 0.0)         // solar radiation cannot be negative
+                    rec.SetSolarRad(sr);
             }
             catch (...) {}
         }
@@ -212,48 +223,446 @@ bool LoadWeatherData(const string & path, Vector<WeatherRecord> & records)
     return true;
 }
 
-// --- HIGH-LEVEL ALGORITHMIC PROCESSING ROUTINES ---
+// --- TREE CONSTRUCTION ---
+// The data arrives in chronological order. Inserting it in that order would
+// build a tree that is one long right-hand branch, which is as slow as a list
+// and deep enough to exhaust the call stack during recursion. The tree itself
+// is not changed to fix this; the client controls the order of insertion
+// instead, which is where the knowledge about the data belongs.
 
-void ExecuteOption1(const Vector<WeatherRecord> & records, int month, int year)
+void MergeRuns(const Vector<WeatherRecord> & left,
+               const Vector<WeatherRecord> & right,
+               Vector<WeatherRecord> & out)
 {
-    Vector<double> subset;
-    for (int i{0}; i < records.Size(); ++i)
+    int i{0};
+    int j{0};
+    while (i < left.Size() && j < right.Size())
     {
-        if (records[i].GetDate().GetMonth() == month && records[i].GetDate().GetYear() == year && records[i].IsValidWind())
+        if (right[j] < left[i])
         {
-            subset.Insert(subset.Size(), records[i].GetWindSpeed() * 3.6); // m/s to km/h conversion
+            out.Insert(out.Size(), right[j]);
+            ++j;
+        }
+        else
+        {
+            out.Insert(out.Size(), left[i]);
+            ++i;
         }
     }
+    while (i < left.Size())
+    {
+        out.Insert(out.Size(), left[i]);
+        ++i;
+    }
+    while (j < right.Size())
+    {
+        out.Insert(out.Size(), right[j]);
+        ++j;
+    }
+}
 
-    // Exact Specification Format Match (Option 1)
+/**
+ * @brief Sorts records into date and time order using merge sort.
+ *
+ * Merge sort is used rather than a simple insertion sort because two data
+ * files can cover the same year, so the combined records are not necessarily
+ * already ordered, and the record count is large.
+ *
+ * @param  data - the records to sort
+ * @param  out - receives the records in ascending order
+ * @return void
+ */
+void MergeSortRecords(const Vector<WeatherRecord> & data, Vector<WeatherRecord> & out)
+{
+    if (data.Size() <= 1)
+    {
+        for (int i{0}; i < data.Size(); ++i)
+            out.Insert(out.Size(), data[i]);
+        return;
+    }
+
+    int mid{data.Size() / 2};
+    Vector<WeatherRecord> leftIn;
+    Vector<WeatherRecord> rightIn;
+
+    for (int i{0}; i < mid; ++i)
+        leftIn.Insert(leftIn.Size(), data[i]);
+    for (int i{mid}; i < data.Size(); ++i)
+        rightIn.Insert(rightIn.Size(), data[i]);
+
+    Vector<WeatherRecord> leftSorted;
+    Vector<WeatherRecord> rightSorted;
+    MergeSortRecords(leftIn, leftSorted);
+    MergeSortRecords(rightIn, rightSorted);
+
+    MergeRuns(leftSorted, rightSorted, out);
+}
+
+/**
+ * @brief Inserts a sorted range into the tree middle element first.
+ *
+ * Taking the middle element of the range as the subtree root, then repeating
+ * on each half, produces a balanced tree from already sorted data. The tree
+ * class is untouched.
+ *
+ * @param  sorted - records already in ascending order
+ * @param  lo - first index of the range
+ * @param  hi - last index of the range
+ * @param  tree - the tree to insert into
+ * @return void
+ */
+void InsertBalanced(const Vector<WeatherRecord> & sorted, int lo, int hi, WeatherTree & tree)
+{
+    if (lo > hi)
+        return;
+    int mid{lo + ((hi - lo) / 2)};
+    tree.Insert(sorted[mid]);
+    InsertBalanced(sorted, lo, mid - 1, tree);
+    InsertBalanced(sorted, mid + 1, hi, tree);
+}
+
+/**
+ * @brief Groups records by year and builds one balanced tree per year.
+ *
+ * @param  records - every record read from the data files
+ * @param  years - receives one tree for each year present
+ * @return void
+ */
+void BuildYearMap(const Vector<WeatherRecord> & records, YearMap & years)
+{
+    map<int, Vector<WeatherRecord> > buckets;
+
+    for (int i{0}; i < records.Size(); ++i)
+    {
+        int y{records[i].GetDate().GetYear()};
+        buckets[y].Insert(buckets[y].Size(), records[i]);
+    }
+
+    map<int, Vector<WeatherRecord> >::const_iterator it;
+    for (it = buckets.begin(); it != buckets.end(); ++it)
+    {
+        Vector<WeatherRecord> sorted;
+        MergeSortRecords(it->second, sorted);
+        InsertBalanced(sorted, 0, sorted.Size() - 1, years[it->first]);
+    }
+}
+
+// --- CLIENT SIDE CALL-BACK COLLECTORS ---
+// A function pointer carries no state, so each collector keeps its own static
+// state and is configured before the traversal runs. The tree stays unaware of
+// what a weather record is or what is being done with it.
+
+/**
+ * @class WindMonthCollector
+ * @brief Collects wind speeds for one month, in km/h.
+ */
+class WindMonthCollector
+{
+public:
+    /// Clears the collector and sets the month to collect
+    static void Reset(int month);
+    /// Call-back matching WeatherTree::VisitFn
+    static void Collect(const WeatherRecord & r);
+    /// The speeds collected by the last traversal
+    static const Vector<double> & Values();
+private:
+    static int s_month;
+    static Vector<double> s_values;
+};
+
+int WindMonthCollector::s_month = 0;
+Vector<double> WindMonthCollector::s_values;
+
+void WindMonthCollector::Reset(int month)
+{
+    s_month = month;
+    Vector<double> empty;
+    s_values = empty;
+}
+
+void WindMonthCollector::Collect(const WeatherRecord & r)
+{
+    if (r.GetDate().GetMonth() == s_month && r.IsValidWind())
+    {
+        s_values.Insert(s_values.Size(), r.GetWindSpeed() * 3.6);
+    }
+}
+
+const Vector<double> & WindMonthCollector::Values()
+{
+    return s_values;
+}
+
+/**
+ * @class YearTempCollector
+ * @brief Collects ambient temperatures into one bucket per month.
+ */
+class YearTempCollector
+{
+public:
+    /// Clears every month bucket
+    static void Reset();
+    /// Call-back matching WeatherTree::VisitFn
+    static void Collect(const WeatherRecord & r);
+    /// The temperatures collected for the given month, 1 to 12
+    static const Vector<double> & Month(int m);
+private:
+    static Vector<double> s_months[13];
+};
+
+Vector<double> YearTempCollector::s_months[13];
+
+void YearTempCollector::Reset()
+{
+    for (int m{0}; m < 13; ++m)
+    {
+        Vector<double> empty;
+        s_months[m] = empty;
+    }
+}
+
+void YearTempCollector::Collect(const WeatherRecord & r)
+{
+    if (r.IsValidTemp())
+    {
+        int m{r.GetDate().GetMonth()};
+        if (m >= 1 && m <= 12)
+            s_months[m].Insert(s_months[m].Size(), r.GetAmbientTemp());
+    }
+}
+
+const Vector<double> & YearTempCollector::Month(int m)
+{
+    return s_months[m];
+}
+
+/**
+ * @class PairCollector
+ * @brief Collects the three pairs of fields needed by the correlation option.
+ *
+ * A record only contributes to a pair when both fields of that pair are valid,
+ * so every pair passed to the calculation is complete.
+ */
+class PairCollector
+{
+public:
+    /// Clears the collector and sets the month to collect
+    static void Reset(int month);
+    /// Call-back matching WeatherTree::VisitFn
+    static void Collect(const WeatherRecord & r);
+
+    static const Vector<double> & WindForTemp();
+    static const Vector<double> & TempForWind();
+    static const Vector<double> & WindForSolar();
+    static const Vector<double> & SolarForWind();
+    static const Vector<double> & TempForSolar();
+    static const Vector<double> & SolarForTemp();
+private:
+    static int s_month;
+    static Vector<double> s_sForT;
+    static Vector<double> s_tForS;
+    static Vector<double> s_sForR;
+    static Vector<double> s_rForS;
+    static Vector<double> s_tForR;
+    static Vector<double> s_rForT;
+};
+
+int PairCollector::s_month = 0;
+Vector<double> PairCollector::s_sForT;
+Vector<double> PairCollector::s_tForS;
+Vector<double> PairCollector::s_sForR;
+Vector<double> PairCollector::s_rForS;
+Vector<double> PairCollector::s_tForR;
+Vector<double> PairCollector::s_rForT;
+
+void PairCollector::Reset(int month)
+{
+    s_month = month;
+    Vector<double> empty;
+    s_sForT = empty;
+    s_tForS = empty;
+    s_sForR = empty;
+    s_rForS = empty;
+    s_tForR = empty;
+    s_rForT = empty;
+}
+
+void PairCollector::Collect(const WeatherRecord & r)
+{
+    if (r.GetDate().GetMonth() != s_month)
+        return;
+
+    if (r.IsValidWind() && r.IsValidTemp())
+    {
+        s_sForT.Insert(s_sForT.Size(), r.GetWindSpeed() * 3.6);
+        s_tForS.Insert(s_tForS.Size(), r.GetAmbientTemp());
+    }
+    if (r.IsValidWind() && r.IsValidSolar())
+    {
+        s_sForR.Insert(s_sForR.Size(), r.GetWindSpeed() * 3.6);
+        s_rForS.Insert(s_rForS.Size(), r.GetSolarRad());
+    }
+    if (r.IsValidTemp() && r.IsValidSolar())
+    {
+        s_tForR.Insert(s_tForR.Size(), r.GetAmbientTemp());
+        s_rForT.Insert(s_rForT.Size(), r.GetSolarRad());
+    }
+}
+
+const Vector<double> & PairCollector::WindForTemp()
+{
+    return s_sForT;
+}
+const Vector<double> & PairCollector::TempForWind()
+{
+    return s_tForS;
+}
+const Vector<double> & PairCollector::WindForSolar()
+{
+    return s_sForR;
+}
+const Vector<double> & PairCollector::SolarForWind()
+{
+    return s_rForS;
+}
+const Vector<double> & PairCollector::TempForSolar()
+{
+    return s_tForR;
+}
+const Vector<double> & PairCollector::SolarForTemp()
+{
+    return s_rForT;
+}
+
+/**
+ * @class YearReportCollector
+ * @brief Collects wind, temperature and solar totals into one bucket per month.
+ */
+class YearReportCollector
+{
+public:
+    /// Clears every month bucket
+    static void Reset();
+    /// Call-back matching WeatherTree::VisitFn
+    static void Collect(const WeatherRecord & r);
+
+    static const Vector<double> & Wind(int m);
+    static const Vector<double> & Temp(int m);
+    static double SolarTotal(int m);
+    static bool HasData(int m);
+private:
+    static Vector<double> s_wind[13];
+    static Vector<double> s_temp[13];
+    static double s_solar[13];
+    static bool s_any[13];
+};
+
+Vector<double> YearReportCollector::s_wind[13];
+Vector<double> YearReportCollector::s_temp[13];
+double YearReportCollector::s_solar[13] = {0.0};
+bool YearReportCollector::s_any[13] = {false};
+
+void YearReportCollector::Reset()
+{
+    for (int m{0}; m < 13; ++m)
+    {
+        Vector<double> emptyW;
+        Vector<double> emptyT;
+        s_wind[m] = emptyW;
+        s_temp[m] = emptyT;
+        s_solar[m] = 0.0;
+        s_any[m] = false;
+    }
+}
+
+void YearReportCollector::Collect(const WeatherRecord & r)
+{
+    int m{r.GetDate().GetMonth()};
+    if (m < 1 || m > 12)
+        return;
+
+    if (r.IsValidWind())
+    {
+        s_wind[m].Insert(s_wind[m].Size(), r.GetWindSpeed() * 3.6);
+        s_any[m] = true;
+    }
+    if (r.IsValidTemp())
+    {
+        s_temp[m].Insert(s_temp[m].Size(), r.GetAmbientTemp());
+        s_any[m] = true;
+    }
+    if (r.IsValidSolar())
+    {
+        if (r.GetSolarRad() >= 100.0)
+            s_solar[m] += r.GetSolarRad();
+        s_any[m] = true;
+    }
+}
+
+const Vector<double> & YearReportCollector::Wind(int m)
+{
+    return s_wind[m];
+}
+const Vector<double> & YearReportCollector::Temp(int m)
+{
+    return s_temp[m];
+}
+double YearReportCollector::SolarTotal(int m)
+{
+    return s_solar[m];
+}
+bool YearReportCollector::HasData(int m)
+{
+    return s_any[m];
+}
+
+// --- HIGH-LEVEL ALGORITHMIC PROCESSING ROUTINES ---
+
+void ExecuteOption1(const YearMap & years, int month, int year)
+{
     cout << GetMonthName(month) << " " << year << ":" << endl;
+
+    YearMap::const_iterator it{years.find(year)};
+    if (it == years.end())
+    {
+        cout << "No Data" << endl;
+        return;
+    }
+
+    WindMonthCollector::Reset(month);
+    it->second.InOrderTraversal(WindMonthCollector::Collect);
+
+    const Vector<double> & subset{WindMonthCollector::Values()};
     if (subset.Size() == 0)
     {
         cout << "No Data" << endl;
         return;
     }
+
     cout << fixed << setprecision(1);
     cout << "Average speed: " << CalculateAverage(subset) << " km/h" << endl;
     cout << "Sample stdev: " << CalculateStandardDeviation(subset) << endl;
 }
 
-void ExecuteOption2(const Vector<WeatherRecord> & records, int year)
+void ExecuteOption2(const YearMap & years, int year)
 {
-    // Exact Specification Format Match (Option 2): Loops months 1 to 12
     cout << year << endl;
-    cout << fixed << setprecision(1);
 
+    YearMap::const_iterator it{years.find(year)};
+    if (it == years.end())
+    {
+        for (int m{1}; m <= 12; ++m)
+            cout << GetMonthName(m) << ": No Data" << endl;
+        return;
+    }
+
+    YearTempCollector::Reset();
+    it->second.InOrderTraversal(YearTempCollector::Collect);
+
+    cout << fixed << setprecision(1);
     for (int m{1}; m <= 12; ++m)
     {
-        Vector<double> subset;
-        for (int i{0}; i < records.Size(); ++i)
-        {
-            if (records[i].GetDate().GetYear() == year && records[i].GetDate().GetMonth() == m && records[i].IsValidTemp())
-            {
-                subset.Insert(subset.Size(), records[i].GetAmbientTemp());
-            }
-        }
-
+        const Vector<double> & subset{YearTempCollector::Month(m)};
         cout << GetMonthName(m) << ": ";
         if (subset.Size() == 0)
         {
@@ -267,56 +676,40 @@ void ExecuteOption2(const Vector<WeatherRecord> & records, int year)
     }
 }
 
-void ExecuteOption3(const Vector<WeatherRecord> & records, int month)
+void ExecuteOption3(const YearMap & years, int month)
 {
-    // Assignment 2: sample Pearson Correlation Coefficient for one month,
-    // across ALL years that have been loaded.
-    // A record only contributes to a pair when BOTH fields of that pair are
-    // valid, so every pair passed to CalculateSPCC is complete.
-    Vector<double> sForT, tForS;   // S_T
-    Vector<double> sForR, rForS;   // S_R
-    Vector<double> tForR, rForT;   // T_R
+    // The selected month applies to every year that has been loaded, so each
+    // year's tree is traversed in turn and the same collector accumulates.
+    PairCollector::Reset(month);
 
-    for (int i{0}; i < records.Size(); ++i)
+    YearMap::const_iterator it;
+    for (it = years.begin(); it != years.end(); ++it)
     {
-        if (records[i].GetDate().GetMonth() != month)
-            continue;
-
-        if (records[i].IsValidWind() && records[i].IsValidTemp())
-        {
-            sForT.Insert(sForT.Size(), records[i].GetWindSpeed() * 3.6);
-            tForS.Insert(tForS.Size(), records[i].GetAmbientTemp());
-        }
-        if (records[i].IsValidWind() && records[i].IsValidSolar())
-        {
-            sForR.Insert(sForR.Size(), records[i].GetWindSpeed() * 3.6);
-            rForS.Insert(rForS.Size(), records[i].GetSolarRad());
-        }
-        if (records[i].IsValidTemp() && records[i].IsValidSolar())
-        {
-            tForR.Insert(tForR.Size(), records[i].GetAmbientTemp());
-            rForT.Insert(rForT.Size(), records[i].GetSolarRad());
-        }
+        it->second.InOrderTraversal(PairCollector::Collect);
     }
 
     cout << "Sample Pearson Correlation Coefficient for "
          << GetMonthName(month) << endl;
 
-    if (sForT.Size() == 0 && sForR.Size() == 0 && tForR.Size() == 0)
+    if (PairCollector::WindForTemp().Size() == 0 &&
+            PairCollector::WindForSolar().Size() == 0 &&
+            PairCollector::TempForSolar().Size() == 0)
     {
         cout << "No Data" << endl;
         return;
     }
 
     cout << fixed << setprecision(2);
-    cout << "S_T: " << CalculateSPCC(sForT, tForS) << endl;
-    cout << "S_R: " << CalculateSPCC(sForR, rForS) << endl;
-    cout << "T_R: " << CalculateSPCC(tForR, rForT) << endl;
+    cout << "S_T: " << CalculateSPCC(PairCollector::WindForTemp(),
+                                     PairCollector::TempForWind()) << endl;
+    cout << "S_R: " << CalculateSPCC(PairCollector::WindForSolar(),
+                                     PairCollector::SolarForWind()) << endl;
+    cout << "T_R: " << CalculateSPCC(PairCollector::TempForSolar(),
+                                     PairCollector::SolarForTemp()) << endl;
 }
 
-void ExecuteOption4(const Vector<WeatherRecord> & records, int year)
+void ExecuteOption4(const YearMap & years, int year)
 {
-    // Fix: Writes directly to an output stream file, not cout console
     const string OUTPUT_FILENAME{"WindTempSolar.csv"};
     ofstream outfile(OUTPUT_FILENAME);
 
@@ -327,50 +720,35 @@ void ExecuteOption4(const Vector<WeatherRecord> & records, int year)
     }
 
     outfile << year << "\n";
+
+    YearMap::const_iterator it{years.find(year)};
+    if (it == years.end())
+    {
+        outfile << "No Data\n";
+        cout << "Output written to " << OUTPUT_FILENAME << endl;
+        return;
+    }
+
+    YearReportCollector::Reset();
+    it->second.InOrderTraversal(YearReportCollector::Collect);
+
     outfile << fixed << setprecision(1);
     bool anyMonthWritten{false};
+
     for (int m{1}; m <= 12; ++m)
     {
-        Vector<double> speedSub;
-        Vector<double> tempSub;
-        double solarSum{0.0};
-        bool operational{false};
-
-        for (int i{0}; i < records.Size(); ++i)
-        {
-            if (records[i].GetDate().GetYear() == year && records[i].GetDate().GetMonth() == m)
-            {
-                if (records[i].IsValidWind())
-                {
-                    speedSub.Insert(speedSub.Size(), records[i].GetWindSpeed() * 3.6);
-                    operational = true;
-                }
-                if (records[i].IsValidTemp())
-                {
-                    tempSub.Insert(tempSub.Size(), records[i].GetAmbientTemp());
-                    operational = true;
-                }
-                if (records[i].IsValidSolar())
-                {
-                    if (records[i].GetSolarRad() >= 100.0)
-                    {
-                        solarSum += records[i].GetSolarRad();
-                    }
-                    operational = true;
-                }
-            }
-        }
-
-        if (!operational)
+        if (!YearReportCollector::HasData(m))
             continue;
 
         anyMonthWritten = true;
-        double solarKwh = (solarSum * (1.0 / 6.0)) / 1000.0;
 
-        // Write the month name, then each field. If a field has no data, leave
-        // it blank between the commas - as shown in the spec example:
-        //   February,4.5(3.1, 2.9), ,200.3
-        // Assignment 2: mean absolute deviation is printed next to the stdev.
+        const Vector<double> & speedSub{YearReportCollector::Wind(m)};
+        const Vector<double> & tempSub{YearReportCollector::Temp(m)};
+        double solarSum{YearReportCollector::SolarTotal(m)};
+        double solarKwh{(solarSum * (1.0 / 6.0)) / 1000.0};
+
+        // A field with no data is left blank between its commas, as the
+        // specification shows: February,4.5(3.1, 2.9), ,200.3
         outfile << GetMonthName(m) << ",";
 
         if (speedSub.Size() > 0)
@@ -390,8 +768,6 @@ void ExecuteOption4(const Vector<WeatherRecord> & records, int year)
         outfile << "\n";
     }
 
-    // Spec: "If the entire year's data is not available, output just the year
-    // on the first line and 'No Data' on the second line."
     if (!anyMonthWritten)
     {
         outfile << "No Data\n";
@@ -399,8 +775,9 @@ void ExecuteOption4(const Vector<WeatherRecord> & records, int year)
 
     cout << "Output written to " << OUTPUT_FILENAME << endl;
 }
+
 // --- DISPLAY INTERFACE ROUTING MENU LOOP ---
-void RunMenuLoop(const Vector<WeatherRecord> & records)
+void RunMenuLoop(const YearMap & years)
 {
     int choice{0};
     while (choice != 5)
@@ -441,16 +818,16 @@ void RunMenuLoop(const Vector<WeatherRecord> & records)
         switch (choice)
         {
         case 1:
-            ExecuteOption1(records, m, y);
+            ExecuteOption1(years, m, y);
             break;
         case 2:
-            ExecuteOption2(records, y);
+            ExecuteOption2(years, y);
             break;
         case 3:
-            ExecuteOption3(records, m);
+            ExecuteOption3(years, m);
             break;
         case 4:
-            ExecuteOption4(records, y);
+            ExecuteOption4(years, y);
             break;
         case 5:
             cout << "Exiting database pipeline utility system." << endl;
@@ -464,6 +841,7 @@ void RunMenuLoop(const Vector<WeatherRecord> & records)
 int main()
 {
     // --- 1. INPUT STAGE ---
+    // Read every file listed in the config into a temporary linear container.
     const string CONFIG_PATH{"data/data_source.txt"};
     Vector<string> csvPaths;
 
@@ -472,27 +850,33 @@ int main()
         return 1;
     }
 
-    // Load every listed file into the SAME structure. LoadWeatherData appends,
-    // so each file's records accumulate. Order in data_source.txt does not matter
-    // because the menu options filter by year.
-    Vector<WeatherRecord> masterStorageLog; //dynamic
+    Vector<WeatherRecord> loaded;
     for (int i{0}; i < csvPaths.Size(); ++i)
     {
-        if (!LoadWeatherData(csvPaths[i], masterStorageLog))
+        if (!LoadWeatherData(csvPaths[i], loaded))
         {
             cerr << "Warning: skipping file that failed to load: " << csvPaths[i] << endl;
-            // continue with the remaining files rather than aborting everything
         }
     }
 
-    if (masterStorageLog.Size() == 0)
+    if (loaded.Size() == 0)
     {
         cerr << "Error: no data was loaded from any listed file." << endl;
         return 1;
     }
 
-    // --- 2. PROCESSING & 3. OUTPUT STAGES (Managed inside coordination loop) ---
-    RunMenuLoop(masterStorageLog);
+    // --- 2. STRUCTURING STAGE ---
+    // Group the records by year and build one balanced search tree per year.
+    // The map gives the year in O(log n); the tree holds that year's records in
+    // date and time order and is read back through function pointer traversals.
+    YearMap years;
+    BuildYearMap(loaded, years);
+
+    cout << "Loaded " << loaded.Size() << " records across "
+         << static_cast<int>(years.size()) << " year(s)." << endl;
+
+    // --- 3. PROCESSING & 4. OUTPUT STAGES ---
+    RunMenuLoop(years);
 
     return 0;
 }

@@ -1,89 +1,108 @@
-ICT283 - Assignment 2 progress evaluation
-Jun Rong
+ICT283 Assignment 2 - evaluation.txt
+Name: Jun Rong
 
-1. MENU OPTIONS FOR ASSIGNMENT 2
 
-The program builds and runs under CodeBlocks with C++11 and all warnings
-enabled (-Wall -Wextra), reporting 0 errors and 0 warnings.
+MALWARE DECLARATION
+- The entire submission was scanned for malware on 19/07/2026 using Microsoft
+  Defender Antivirus. No threats were found. 42 files scanned, 0 threats found.
 
-Option 3 has been replaced. It now prompts for a month as a number and
-prints the sample Pearson Correlation Coefficient for S_T, S_R and T_R
-across every year loaded, to two decimal places as specified. A record only
-contributes to a pair when both fields of that pair are valid, so every pair
-passed to the calculation is complete. I validated the routine against
-Excel's PEARSON function on one data file for February: Excel returned
-0.300695 and the program returned 0.30, which is the same value at the
-required precision.
+BUILD
+- CodeBlocks 17.12, GNU GCC compiler. Double-clicking Assignment2.cbp opens it.
+- Built to C++11 with -std=c++11 -Wall -Wextra. 0 errors, 0 warnings.
+- The "executable" directory holds a statically linked Release build and its
+  data files. Confirmed with objdump that it imports only KERNEL32.dll and
+  msvcrt.dll, both supplied with Windows, so it runs without a compiler or the
+  MinGW runtime installed.
 
-Option 4 now prints the mean absolute deviation next to the standard
-deviation as (stdev, mad), written to WindTempSolar.csv. Nothing else in
-that option changed. As a check, mad is smaller than stdev in every row,
-which is expected because squaring the differences weights outliers more
-heavily.
+WHAT WORKS
+- Reads every file listed in data/data_source.txt from the data directory.
+  Column order differs between the supplied files, so columns are located by
+  header name rather than by position.
+- Blank lines at the end of a data file, in the middle of a file, and inside
+  data_source.txt are skipped. Verified: test_blanklines.csv and the original
+  file produce byte-identical output and both load 90 records.
+- A row with one offline sensor keeps its other readings; each reading has its
+  own valid flag.
+- Values of -999, used in the data as a sensor-offline marker, are rejected for
+  wind speed and solar radiation because neither can be negative. Without this,
+  May 2007 reported an average of 6.7 km/h with a standard deviation of 144.6.
+  It now reports 12.5(8.3, 6.9), against a median of 14.4.
+- Option 1: average wind speed in km/h and sample standard deviation for a
+  given month and year. Prints No Data when absent.
+- Option 2: average ambient temperature and sample standard deviation for every
+  month of a given year.
+- Option 3: sample Pearson Correlation Coefficient for a chosen month across
+  all loaded years, printing S_T, S_R and T_R to two decimal places.
+- Option 4: writes WindTempSolar.csv with average(stdev, mad) for wind and
+  temperature and total solar radiation in kWh/m2, per month. Months with no
+  data are omitted; a year with no data prints the year then No Data.
+- Option 5 exits.
+- The template BST from Lab 10 exercise d is used unmodified. All traversals
+  are driven by raw function pointers.
+- std::map holds one BST per year.
+- No std::vector, std::function, lambda functions or range for loops appear
+  anywhere in the submission. The only linear container is the Vector class
+  from the labs.
 
-CalculateMAD and CalculateSPCC were added to StatsUtils.h as templates
-taking Vector<T>, so neither is coupled to the weather data type.
+DATA STRUCTURE
+- std::map<int, BinarySearchTree<WeatherRecord> >, keyed by year.
+- Rationale, pros, cons and rejected alternatives are in rationale.txt.
 
-Wind speed is converted to km/h before the correlation. This has no effect
-on the result, because correlation is invariant under positive linear
-scaling; it was kept only for consistency with the other options.
+ISSUES FOUND AND RESOLVED
+- Records on the same day were being lost. WeatherRecord::operator< compared
+  only the date, so the tree treated the 144 readings of a day as duplicates.
+  Fixed by comparing date and then time.
+- Inserting records in file order built a tree that was one long right hand
+  branch. At 52,560 records this exhausted the call stack and the program
+  crashed. Fixed by inserting the middle element of the sorted range first and
+  repeating on each half. The BST class was not modified. Measured on a 1 MB
+  stack: file order terminated with a stack overflow, median first insertion
+  completed in about 0.3 seconds.
+- Two files can cover the same year, so each year's records are merge sorted
+  before insertion rather than assumed to be in order.
 
-Solar radiation is not filtered at 100 W/m2 for option 3. That threshold
-exists in option 4 to exclude near-dark readings from an energy total.
-Removing low readings from a correlation would bias it, so all valid
-readings are used.
+A NOTED CONSEQUENCE OF USING THE TREE
+- The BST rejects a duplicate key, so records sharing a date and time are
+  stored once. February 2016 appears in both MetData_Mar01-2015-Mar01-2016 and
+  Metdata-Jan-Dec2016. Across all twelve files, 508,733 records are read and
+  499,987 stored; 8,746 duplicates are discarded. A container without unique
+  keys would have double counted those readings.
 
-2. DATA STRUCTURES - PLANNED APPROACH
+VALIDATION
+- Option 3 was checked against Excel's PEARSON function. On a single data file
+  for February, Excel returned 0.300695 and the program printed 0.30.
+- Option 1 and option 4 values were checked against independently calculated
+  results for February 2015: average 20.2 km/h, stdev 9.8, mad 7.7.
 
-The BST from Lab 10d is in the project but is not yet used in processing. I
-am aware that loading data into the BST and map without using them in the
-processing does not meet the assignment requirement.
+WHAT DOES NOT WORK
+- Nothing specified in the assignment is known to be incomplete or incorrect.
+- The bonus class Map was not attempted; std::map is used.
+- Test plan items T10, T11, T12, T16, T18, T19, T21 and T24 are recorded as not
+  executed rather than claimed as passes.
 
-The intended design is Map<int, Bst<WeatherRecord>>: the key is the year,
-the value is a BST of that year's records ordered by date and time. Options
-1, 2 and 4 select a year through the map in O(log n) and then traverse one
-tree; option 3 iterates the years and traverses each tree. Both structures
-do real work rather than duplicating the Vector.
+TESTING
+- Test plan with expected values is in ICT283_A2_TestPlan.pdf.
+- Console output for the executed tests is in TestRuns.txt.
+- Option 4 output is in T13_WindTempSolar_2015.csv, T14_WindTempSolar_2018.csv
+  and T15_WindTempSolar_2007.csv.
+- Blank line evidence is in T17_baseline.csv and T17_blanklines.csv.
+- Unit tests were run on Vector, Date, Time and WeatherRecord before that code
+  was brought into the assignment. UnitTests.cpp is in the project folder but
+  excluded from the build so that it does not conflict with main.
 
-Two issues must be resolved first. The BST ignores duplicate keys, so
-WeatherRecord::operator< has to compare date and then time, otherwise
-readings ten minutes apart on the same day would be silently discarded.
-Second, the data arrives in chronological order, so sequential insertion
-produces a right-spine tree that degrades to O(n). This can be addressed
-without changing the tree itself by changing the insertion order.
+STATIC ANALYSIS
+- cppcheck was run from the CodeBlocks plugin with the arguments given in the
+  lab. All findings were style level.
+- unusedStructMember reports on Date, Time and WeatherRecord are false
+  positives; those members are used through the accessors in the .cpp files,
+  which cppcheck cannot see when analysing a file in isolation.
+- GetTime is reported unused. It is kept as part of a complete class interface.
 
-I considered Map<year, Map<month, Bst>>. It gives faster access by month,
-but the map then performs the ordering work that the BST should be doing,
-and it makes option 3 more awkward.
-
-3. BACKUPS
-
-Work is kept in a Git repository and on OneDrive.
-
-While restructuring the repository this week I found that the repository
-root was inside the Lab 9 folder and that a second .git existed inside A2.
-Git had staged A2 as an embedded repository, which means it would have
-appeared on GitHub as a folder containing nothing. The backup would have
-looked correct while holding no files.
-
-I found this by reading git status before committing rather than running
-git add and trusting the result. The fix was to move the repository root up
-to ICT283DSA, remove the nested repository, and use a whitelist .gitignore
-so that build output and unit-supplied material are excluded.
-
-The lesson is that a backup that has not been verified is not a backup.
-Opening the file on GitHub to confirm it is readable is now part of the
-process rather than an afterthought.
-
-4. STATIC ANALYSIS
-
-cppcheck was run from the CodeBlocks plugin with the arguments given in the
-lab. All findings were style level. The unusedStructMember reports on Date,
-Time and WeatherRecord are false positives: those members are used through
-the accessors in the .cpp files, which cppcheck cannot see when analysing a
-file in isolation. GetTime is reported as unused but is retained because it
-belongs to a complete class interface.
-
-5. LESSONS FROM THE IN-PERSON ASSESSMENT
-
-[To be completed after the demonstration.]
+BACKUPS
+- A Git repository plus OneDrive.
+- While restructuring the repository, the root was found to be inside the Lab 9
+  folder with a second .git inside the assignment folder. Git had staged that
+  folder as an embedded repository, so it would have appeared on the remote as
+  a folder containing no files. This was found by reading git status before
+  committing rather than trusting git add. A backup that has not been verified
+  is not a backup.

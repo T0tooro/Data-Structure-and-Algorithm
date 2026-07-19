@@ -1,0 +1,198 @@
+ICT283 Assignment 2 - rationale.txt
+Rationale for the data structures used
+Name: Jun Rong
+
+
+--------------------------------------------------------------------------
+1. THE STRUCTURE CHOSEN
+--------------------------------------------------------------------------
+
+    std::map<int, BinarySearchTree<WeatherRecord> >
+
+The key is the year. The value is a binary search tree holding every record
+for that year, ordered by date and then by time.
+
+A Vector<WeatherRecord> is used during loading only. Once the map has been
+built the Vector is discarded and no menu option reads from it.
+
+--------------------------------------------------------------------------
+2. WHY THIS SHAPE
+--------------------------------------------------------------------------
+
+The menu decides the shape. Three of the four options name a year, and the
+fourth names a month that applies to every year loaded:
+
+  Option 1  month and year   -> one year, one traversal, filter by month
+  Option 2  year             -> one year, one traversal, bin by month
+  Option 3  month, all years -> traverse every tree, filter by month
+  Option 4  year             -> one year, one traversal, bin by month
+
+The year is therefore the natural key, and std::map gives that lookup in
+O(log y) where y is the number of years loaded. It also keeps the years in
+ascending order, which option 3 relies on when it walks every year in turn.
+
+Within a year the records are naturally ordered by when they were taken, and
+that ordering is what the BST stores. An in-order traversal returns a year's
+readings in chronological order without any sorting at the point of use.
+
+Both required structures do real work. The map narrows 52,560 records to the
+one year asked for; the tree holds and returns that year's records in order.
+Neither is loaded and then ignored.
+
+--------------------------------------------------------------------------
+3. ISSUES THAT HAD TO BE RESOLVED BEFORE CODING
+--------------------------------------------------------------------------
+
+3.1 Duplicate keys
+
+The BST ignores a key that is neither smaller nor larger than one already
+present. Readings are taken every ten minutes, so 144 readings share a date.
+An operator< that compared only the date would cause 143 of every 144 records
+to be silently discarded. WeatherRecord::operator< therefore compares year,
+month, day, then hour, minute and second.
+
+This is the answer to the lab question about what a type must provide to be
+stored in the tree. The tree needs operator< and copy construction. It does
+not need operator<< any more, because the tree no longer prints anything;
+operator<< is needed by the client's print call-back instead.
+
+3.2 Degenerate tree
+
+The data arrives in chronological order. Inserting it in that order produces
+a tree where every node hangs off the previous node's right link. That is a
+linked list with extra pointers: search degrades from O(log n) to O(n), and
+the recursion depth equals the record count.
+
+Measured at 52,560 records with a 1 MB stack, which is the MinGW default,
+insertion in file order terminated with a stack overflow. It was not merely
+slow; the program crashed.
+
+The fix does not change the tree. The client sorts a year's records, then
+inserts the middle element of the range first and repeats on each half. This
+produces a balanced tree of depth about 16 instead of 52,560, and the same
+run completed in about 0.3 seconds. This follows the approach discussed in
+Topic 11: the knowledge about the data belongs in the client, and the tree
+stays a general purpose container.
+
+3.3 Files that overlap
+
+Two data files can cover the same year, so a year's records are not
+necessarily in order once combined. Each year's records are merge sorted
+before the balanced insertion rather than assumed to be sorted. Merge sort was
+chosen over insertion sort because the record count is large and insertion
+sort is O(n^2) in that case.
+
+--------------------------------------------------------------------------
+4. FUNCTION POINTERS
+--------------------------------------------------------------------------
+
+The traversals take a raw function pointer:
+
+    typedef void (*VisitFn)(const T&);
+
+The tree calls this once per node and does nothing else with the data. This
+keeps the tree ignorant of what a WeatherRecord is and of what is being done
+with it. Previously the traversals wrote to std::cout, which meant the
+container was doing the client's work.
+
+The parameter is const T& rather than the T& shown in the supplied header.
+A call-back that modified a key would break the ordering invariant and corrupt
+the tree, and the supplied file raises this risk directly. Making the
+parameter const means the compiler prevents it, rather than the programmer
+having to remember. It also avoids a const_cast, because the traversal walks
+const Node* and the call-back takes const T&, so the two match.
+
+A function pointer carries no state, so a call-back cannot be told which month
+to collect through its parameter list. Each collector class therefore holds
+static state and is configured immediately before the traversal runs. This is
+the pattern shown in the supplied testTree.cpp.
+
+Con: static state means a collector is not reentrant and two traversals cannot
+run concurrently. That is acceptable in a single threaded command line program
+and it is the direct consequence of the requirement to use raw function
+pointers rather than std::function.
+
+--------------------------------------------------------------------------
+5. PROS AND CONS OF THIS APPROACH
+--------------------------------------------------------------------------
+
+Pros
+- Year lookup is O(log y) instead of scanning every record.
+- A year's records come back in chronological order with no sorting at the
+  point of use.
+- Both required structures are load bearing.
+- Adding a year does not touch existing trees.
+- The tree is reusable: it still compiles and runs in Lab 9 with no change
+  beyond the function pointer traversals.
+
+Cons
+- The whole of a year's tree is traversed even when only one month is wanted.
+  Option 1 visits about 52,560 nodes to use about 4,400 of them.
+- Balance is achieved by controlling insertion order, not by the tree itself.
+  Inserting later records one at a time would unbalance it again. The tree is
+  built once at start up, so this is acceptable here but would not be if the
+  program supported incremental insertion.
+- Static collector state, as described in section 4.
+- Building the map costs a merge sort per year and a full copy of the records
+  at start up.
+
+--------------------------------------------------------------------------
+6. ALTERNATIVES CONSIDERED AND REJECTED
+--------------------------------------------------------------------------
+
+6.1 map<int year, map<int month, BinarySearchTree<WeatherRecord> > >
+
+Gives direct access to a month, which would remove the main cost noted above.
+Rejected because the map would then be doing the ordering work that the BST
+exists to do, leaving the tree holding only a few thousand records with no
+real role. It also makes option 3 more awkward, since it needs a month across
+every year and would require iterating the outer map and indexing the inner
+one. The nesting adds a layer for a gain that only benefits two of the four
+options.
+
+6.2 A single BST holding every record from every year
+
+Simple, and the ordering by date and time is still correct. Rejected because
+every option would traverse all years to answer a question about one, and the
+map would then have no purpose, which does not meet the requirement to use
+both structures.
+
+6.3 Vector only, as in Assignment 1
+
+This is what Assignment 1 did and it works. Rejected because it meets neither
+requirement, and because every option is a linear scan of all records.
+
+6.4 A hash based container keyed by year
+
+Lookup would be O(1) rather than O(log y). Rejected because the number of
+years is small, so the difference is not measurable, and because a hash
+container does not keep the years in order, which option 3 uses when it walks
+every year in turn.
+
+--------------------------------------------------------------------------
+7. THE VECTOR CLASS
+--------------------------------------------------------------------------
+
+Vector is the class written in the labs. It wraps a heap array, manages its
+own memory with a destructor, copy constructor and copy assignment, and grows
+by doubling. It is used for the records read during loading, for the values
+handed to the statistics routines, and inside the collectors.
+
+std::vector is not used anywhere, directly or indirectly, in line with the
+assignment requirement that any STL container other than map must be wrapped.
+
+--------------------------------------------------------------------------
+8. CODING STANDARDS
+--------------------------------------------------------------------------
+
+Rule 6, "Correctness, simplicity, and clarity come first", guided two of the
+decisions above. The balanced insertion is written as a plain recursive
+routine over a sorted range rather than as a self balancing tree, because the
+simpler approach solves the actual problem and leaves the tree class
+unchanged. The statistics routines are free templates over Vector<T> rather
+than members of a weather class, so that each does one thing and can be read
+on its own.
+
+<Check the exact number and title of Rule 5 in the Sutter and Alexandrescu
+book and add a short paragraph here on how it applies. The assignment page
+asks about it directly.>

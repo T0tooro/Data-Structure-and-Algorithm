@@ -72,3 +72,27 @@ bool WeatherRecord::IsValidSolar() const
 {
     return m_validSolar;
 }
+
+// Ordering used by the binary search tree. Date first, then time, so that two
+// readings taken on the same day remain distinct keys.
+bool operator<(const WeatherRecord & lhs, const WeatherRecord & rhs)
+{
+    Date ld{lhs.GetDate()};
+    Date rd{rhs.GetDate()};
+
+    if (ld.GetYear()  != rd.GetYear())
+        return ld.GetYear()  < rd.GetYear();
+    if (ld.GetMonth() != rd.GetMonth())
+        return ld.GetMonth() < rd.GetMonth();
+    if (ld.GetDay()   != rd.GetDay())
+        return ld.GetDay()   < rd.GetDay();
+
+    Time lt{lhs.GetTime()};
+    Time rt{rhs.GetTime()};
+
+    if (lt.GetHour()   != rt.GetHour())
+        return lt.GetHour()   < rt.GetHour();
+    if (lt.GetMinute() != rt.GetMinute())
+        return lt.GetMinute() < rt.GetMinute();
+    return lt.GetSecond() < rt.GetSecond();
+}

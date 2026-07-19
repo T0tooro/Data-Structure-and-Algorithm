@@ -13,9 +13,13 @@
  * which also sets the matching valid flag, so a reading and its flag can never
  * disagree.
  *
- * @author <your name>
- * @version 01
+ * A record is ordered by date and then by time, so that records can be stored
+ * in a binary search tree.
+ *
+ * @author JunRong
+ * @version 02
  * @date 13/06/2026, Created
+ * @date 19/07/2026, operator< added so records can be stored in the BST
  */
 class WeatherRecord
 {
@@ -128,3 +132,20 @@ private:
     /// True if a solar radiation value was parsed
     bool m_validSolar{false};
 };
+
+/**
+ * @brief Orders two records by date, and then by time.
+ *
+ * The binary search tree requires this operator in order to place a record.
+ * Time is compared after the date so that two readings taken on the same day
+ * are distinct keys; without it the tree would treat them as duplicates and
+ * keep only the first reading of each day.
+ *
+ * Declared as a free function rather than a member, so that the tree stays
+ * independent of how records are compared.
+ *
+ * @param lhs - the record on the left of the operator
+ * @param rhs - the record on the right of the operator
+ * @return bool - true if lhs is strictly ordered before rhs
+ */
+bool operator<(const WeatherRecord & lhs, const WeatherRecord & rhs);

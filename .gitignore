@@ -10,6 +10,7 @@
 # build output
 bin/
 obj/
+executable/ 
 *.o
 *.exe
 *.depend
