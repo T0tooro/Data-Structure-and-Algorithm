@@ -1,6 +1,33 @@
+# ignore everything at top level by default
+/*
+
+# allow back only these
+!.gitignore
+!A1/
+!A2/
+!Topic 10/
+
+# build output
 bin/
 obj/
 *.o
 *.exe
 *.depend
 *.layout
+*.bmarks
+
+# generated documentation
+html/
+latex/
+
+# documents and unit-supplied material
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.rtf
+desktop.ini
+Topic 10/Practical/sample code/
+Topic 10/Practical/Git_Usage/
+Topic 10/Practical/data/
+A1/Assignment specs/

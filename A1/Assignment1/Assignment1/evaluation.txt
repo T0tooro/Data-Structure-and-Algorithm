@@ -1,0 +1,9 @@
+What works:
+- Program reads the CSV filename from data_source.txt and opens the file without recompilation.
+- Column detection works on all three provided CSV files which have different column orders.
+- Menu options 1 to 4 produce output matching the format in the assignment specification.
+- Solar radiation calculation correctly excludes readings below 100 W/m2.
+- Records with one missing sensor field are still stored; only the missing field is skipped.
+
+What doesn't work:
+- Time strings that do not contain a colon are read as 0:00 instead of being rejected.
